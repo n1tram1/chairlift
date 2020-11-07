@@ -15,6 +15,12 @@ type Compiler struct {
 
     mainFn llvm.Value
 
+    // Runtime C functions
+    random_uint8_fn llvm.Value
+
+    // Registers
+    reg_i llvm.Value
+
     reg_v0 llvm.Value
     reg_v1 llvm.Value
     reg_v2 llvm.Value
@@ -76,6 +82,10 @@ func (c *Compiler) ConstUint8(x uint8) llvm.Value {
     return llvm.ConstInt(llvm.Int8Type(), uint64(x), false)
 }
 
+func (c *Compiler) ConstUint16(x uint16) llvm.Value {
+    return llvm.ConstInt(llvm.Int16Type(), uint64(x), false)
+}
+
 func (c *Compiler) selectBlock(bb llvm.BasicBlock) {
     c.builder.SetInsertPointAtEnd(bb)
     c.currentBlock = &bb
@@ -98,11 +108,23 @@ func (c *Compiler) createNamedGlobal(intType llvm.Type, name string) llvm.Value 
     return glob
 }
 
+func (c *Compiler) createWordRegister(name string) llvm.Value {
+    return c.createNamedGlobal(llvm.Int16Type(), name)
+}
+
 func (c *Compiler) createByteRegister(name string) llvm.Value {
     return c.createNamedGlobal(llvm.Int8Type(), name)
 }
 
+func (c *Compiler) createCBindings() {
+    random_uint8_fn_type := llvm.FunctionType(llvm.Int8Type(), []llvm.Type{}, false)
+    c.random_uint8_fn = llvm.AddFunction(c.mod, "random_uint8", random_uint8_fn_type)
+    c.random_uint8_fn.SetLinkage(llvm.ExternalLinkage)
+}
+
 func (c *Compiler) createRegisters() {
+    c.reg_i = c.createWordRegister("I")
+
     c.reg_v0 = c.createByteRegister("V0")
     c.reg_v1 = c.createByteRegister("V1")
     c.reg_v2 = c.createByteRegister("V2")
@@ -132,7 +154,12 @@ func (c *Compiler) createMain() {
 }
 
 func (c *Compiler) compile(rom *Rom) error {
+    for _, inst := range rom.instructions {
+        fmt.Printf("%#v\n", inst)
+    }
+
     c.createRegisters()
+    c.createCBindings()
     c.createMain()
 
     err := compile_instructions(rom.instructions, c)
