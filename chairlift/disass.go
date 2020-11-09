@@ -34,6 +34,10 @@ type Cls struct {}
 
 type Ret struct {}
 
+type Sys struct {
+    addr uint16
+}
+
 type JpAddr struct {
     addr uint16
 }
@@ -186,6 +190,10 @@ func newCls() *Cls {
 
 func newRet() *Ret {
     return &Ret{}
+}
+
+func newSys(opcode uint16) *Sys {
+    return &Sys{extract_nnn(opcode)}
 }
 
 func newJpAddr(opcode uint16) *JpAddr {
@@ -362,11 +370,7 @@ func disassemble(opcode uint16) (Instruction, error) {
 
     switch high_4_bits {
     case 0x0:
-        inst, err := disass_0_prefix(opcode)
-        if err != nil {
-            return nil, err
-        }
-        return inst, nil
+        return disass_0_prefix(opcode), nil
     case 0x1:
         return newJpAddr(opcode), nil
     case 0x2:
@@ -418,14 +422,14 @@ func disassemble(opcode uint16) (Instruction, error) {
     return nil, errors.New(fmt.Sprintf("Unknown opcode %X", opcode))
 }
 
-func disass_0_prefix(opcode uint16) (Instruction, error) {
+func disass_0_prefix(opcode uint16) Instruction {
     switch opcode {
     case 0x00E0:
-        return newCls(), nil
+        return newCls()
     case 0x0EE:
-        return newRet(), nil
+        return newRet()
     default:
-        return nil, errors.New(fmt.Sprintf("invalid 0 prefixed opcode %X", opcode))
+        return newSys(opcode)
     }
 }
 

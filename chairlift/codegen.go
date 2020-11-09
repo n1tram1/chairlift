@@ -24,6 +24,10 @@ func (ret  *Ret) compile(c *Compiler) error {
     return errors.New("unimplemented instruction Ret in codegen")
 }
 
+func (sys *Sys) compile(c* Compiler) error {
+    return errors.New("unimplemented instruction Sys in codegen")
+}
+
 func (jp *JpAddr) compile(c *Compiler) error {
     return errors.New("unimplemented instruction JpAddr in codegen")
 }
@@ -33,13 +37,19 @@ func (call *CallAddr) compile(c *Compiler) error {
 }
 
 func (se *SeVxByte) compile(c *Compiler) error {
-    // reg := c.VRegToLLVMValue(se.vx)
-    // val := c.ConstUint8(se.kk)
+    reg := c.VRegToLLVMValue(se.vx)
+    val := c.ConstUint8(se.kk)
 
-    // regEqualsVal := c.builder.CreateICmp(llvm.IntEQ, reg, val, "")
+    then_block := llvm.InsertBasicBlock(*c.currentBlock, "then")
+    else_block := llvm.InsertBasicBlock(then_block, "else")
 
+    regEqualsVal := c.builder.CreateICmp(llvm.IntEQ, reg, val, "")
 
-    return errors.New("unimplemented instruction SeVxByte in codegen")
+    c.builder.CreateCondBr(regEqualsVal, then_block, else_block)
+
+    c.selectBlock(then_block)
+
+    return nil
 }
 
 func (sne *SneVxByte) compile(c *Compiler) error {
@@ -60,7 +70,11 @@ func (ld *LdVxByte) compile(c *Compiler) error {
 }
 
 func (add *AddVxByte) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction AddVxVy in codegen")
+    operation := c.builder.CreateAdd(c.VRegToLLVMValue(add.vx), c.ConstUint8(add.kk), "")
+
+    c.builder.CreateStore(operation, c.VRegToLLVMValue(add.vx))
+
+    return nil
 }
 
 func (ld *LdVxVy) compile(c *Compiler) error {
@@ -124,7 +138,10 @@ func (rnd *Rnd) compile(c *Compiler) error {
 }
 
 func (drw *DrwVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction DrwVxVy in codegen")
+    n := c.ConstUint8(drw.n)
+    c.builder.CreateCall(c.draw_fn, []llvm.Value{n}, "")
+
+    return nil
 }
 
 func (skp *SkpVx) compile(c *Compiler) error {
