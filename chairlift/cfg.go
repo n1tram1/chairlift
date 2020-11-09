@@ -8,7 +8,11 @@ type BasicBlock struct {
     addr int
 
     instructions []Instruction
-    successors []*BasicBlock
+    // successors []*BasicBlock
+
+    fallthrough_successor *BasicBlock
+    jump_successor *BasicBlock
+
 }
 
 func (bb *BasicBlock) contains(addr int) bool {
@@ -23,8 +27,12 @@ func (bb *BasicBlock) dump(visited map[*BasicBlock]bool) {
         return
     }
 
-    for _, succ := range bb.successors {
-        fmt.Printf("\"%p\" -> \"%p\"\n", bb, succ)
+    if bb.jump_successor != nil {
+        fmt.Printf("\"%p\" -> \"%p\"\n", bb, bb.jump_successor)
+    }
+
+    if bb.fallthrough_successor != nil {
+        fmt.Printf("\"%p\" -> \"%p\" [color=green]\n", bb, bb.fallthrough_successor)
     }
 
     visited[bb] = true
@@ -38,8 +46,12 @@ func (bb *BasicBlock) dump(visited map[*BasicBlock]bool) {
 
     fmt.Printf("\"%p\" [label=\"%v\"]\n", bb, node_label)
 
-    for _, succ := range bb.successors {
-        succ.dump(visited)
+    if bb.fallthrough_successor != nil {
+        bb.fallthrough_successor.dump(visited)
+    }
+
+    if bb.jump_successor != nil {
+        bb.jump_successor.dump(visited)
     }
 }
 
@@ -56,27 +68,30 @@ func Dump(bb *BasicBlock) {
 func (bb *BasicBlock) split(addr int) *BasicBlock {
         new_bb := &BasicBlock{}
         new_bb.addr = bb.addr
-        new_bb.successors = []*BasicBlock{bb}
+
+        if addr == 0x200 || bb.addr == 0x200 {
+            fmt.Println("")
+        }
 
         new_bb_inst_start := (addr - bb.addr) / 2
 
         new_bb.instructions = bb.instructions[:new_bb_inst_start]
         bb.instructions = bb.instructions[new_bb_inst_start:]
+
+        new_bb.jump_successor = bb
         bb.addr = addr
 
         return new_bb
 }
 
-func (bb *BasicBlock) add_successor(succ *BasicBlock) {
-    bb.successors = append(bb.successors, succ)
-}
-
 func (an *flowAnalyzer) redirectSuccessors(from, to *BasicBlock) {
     for _, block := range an.addrToBlock {
-        for i := 0; i < len(block.successors); i += 1 {
-            if block.successors[i] == from {
-                block.successors[i] = to
-            }
+        if block.jump_successor == from {
+            block.jump_successor = to
+        }
+
+        if block.fallthrough_successor == from {
+            block.fallthrough_successor = to
         }
     }
 }
@@ -95,7 +110,6 @@ func (an *flowAnalyzer) correspondingBlock(addr int) *BasicBlock {
         found = &BasicBlock{}
         found.addr = addr
         found.instructions = []Instruction{}
-        found.successors = []*BasicBlock{}
 
     } else if found != nil && found.addr != addr {
         split := found.split(addr)
@@ -129,6 +143,10 @@ func AnalyzeFlow(bytes []byte) *BasicBlock {
 func (an *flowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
     bb :=  an.correspondingBlock(index + 0x200)
 
+    if bb.addr == 0x200 {
+        fmt.Printf("0x200: %#v\n", bb)
+    }
+
     for ; index < len(bytes) - 1 && an.instructions[index] == nil; index += 2 {
         opcode := uint16(bytes[index]) << 8 | uint16(bytes[index + 1])
 
@@ -148,7 +166,7 @@ func (an *flowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
             discovered := an.analyze(bytes, destinationAsIndex)
 
             if discovered != nil {
-                bb.add_successor(discovered)
+                bb.jump_successor = discovered
             }
 
             break;
@@ -157,17 +175,20 @@ func (an *flowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
         if isBranch(inst) {
             // destinationAsIndex := getBranchPossibleDestination(index)
 
+
             discovered_branch := an.analyze(bytes, index + 4)
             discovered_fallthrough := an.analyze(bytes, index + 2)
 
             if discovered_branch != nil {
-                bb.add_successor(discovered_branch)
+                bb.jump_successor = discovered_branch
             }
 
             if discovered_fallthrough != nil {
-                bb.add_successor(discovered_fallthrough)
+                bb.fallthrough_successor = discovered_fallthrough
 
-                discovered_fallthrough.add_successor(discovered_branch)
+                if discovered_fallthrough.jump_successor == nil {
+                    discovered_fallthrough.jump_successor = discovered_branch
+                }
             }
 
             break

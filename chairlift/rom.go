@@ -48,32 +48,3 @@ func (r *Rom) Iterate(f func(addr int, inst Instruction) error) error {
     // return nil
 }
 
-
-func isJump(inst Instruction) bool {
-    switch inst.(type) {
-    case *Sys:
-        return true
-    case *JpAddr:
-        return true
-    case *CallAddr:
-        return true
-    }
-
-    return false
-}
-
-func getDestination(inst Instruction) uint16 {
-    switch inst.(type) {
-    case *Sys:
-        sys := inst.(*Sys)
-        return sys.addr
-    case *JpAddr:
-        jp := inst.(*JpAddr)
-        return jp.addr
-    case *CallAddr:
-        call := inst.(*CallAddr)
-        return call.addr
-    default:
-        panic("unreachable")
-    }
-}
