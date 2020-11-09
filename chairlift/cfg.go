@@ -67,6 +67,10 @@ func (bb *BasicBlock) split(addr int) *BasicBlock {
         return new_bb
 }
 
+func (bb *BasicBlock) add_successor(succ *BasicBlock) {
+    bb.successors = append(bb.successors, succ)
+}
+
 func (an *flowAnalyzer) redirectSuccessors(from, to *BasicBlock) {
     for _, block := range an.addrToBlock {
         for i := 0; i < len(block.successors); i += 1 {
@@ -92,9 +96,8 @@ func (an *flowAnalyzer) correspondingBlock(addr int) *BasicBlock {
         found.addr = addr
         found.instructions = []Instruction{}
         found.successors = []*BasicBlock{}
-    }
 
-    if found != nil && found.addr != addr {
+    } else if found != nil && found.addr != addr {
         split := found.split(addr)
 
         an.redirectSuccessors(found, split)
@@ -139,18 +142,75 @@ func (an *flowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
 
         if isJump(inst) {
             // Nothing to discover after this because it's a jump.
-            destination := int(getDestination(inst))
+            destination := int(getJumpDestination(inst))
             destinationAsIndex := destination - 0x200
 
             discovered := an.analyze(bytes, destinationAsIndex)
 
-            if discovered != nil /* && !bb.contains(destination) */ {
-                bb.successors = append(bb.successors, discovered)
+            if discovered != nil {
+                bb.add_successor(discovered)
             }
 
             break;
         }
+
+        if isBranch(inst) {
+            // destinationAsIndex := getBranchPossibleDestination(index)
+
+            discovered_branch := an.analyze(bytes, index + 4)
+            discovered_fallthrough := an.analyze(bytes, index + 2)
+
+            if discovered_branch != nil {
+                bb.add_successor(discovered_branch)
+            }
+
+            if discovered_fallthrough != nil {
+                bb.add_successor(discovered_fallthrough)
+
+                discovered_fallthrough.add_successor(discovered_branch)
+            }
+
+            break
+        }
     }
 
     return bb
+}
+
+func isJump(inst Instruction) bool {
+    switch inst.(type) {
+    case *Sys, *JpAddr, *CallAddr:
+        return true
+    }
+
+    return false
+}
+
+func isBranch(inst Instruction) bool {
+    switch inst.(type) {
+    case *SeVxByte, *SneVxByte, *SeVxVy, *SneVxVy:
+        return true
+    }
+
+    return false
+}
+
+func getJumpDestination(inst Instruction) uint16 {
+    switch inst.(type) {
+    case *Sys:
+        sys := inst.(*Sys)
+        return sys.addr
+    case *JpAddr:
+        jp := inst.(*JpAddr)
+        return jp.addr
+    case *CallAddr:
+        call := inst.(*CallAddr)
+        return call.addr
+    default:
+        panic("unreachable")
+    }
+}
+
+func getBranchPossibleDestination(addr_or_offset int) int {
+    return addr_or_offset + 2
 }
