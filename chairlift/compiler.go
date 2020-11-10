@@ -12,11 +12,15 @@ type Compiler struct {
     mod llvm.Module
 
     currentBlock *llvm.BasicBlock
+    addrToBlock map[int]*llvm.BasicBlock
+
+    bb *BasicBlock
 
     mainFn llvm.Value
 
     // Runtime C functions
     random_uint8_fn llvm.Value
+    draw_fn llvm.Value
 
     // Registers
     reg_i llvm.Value
@@ -96,6 +100,7 @@ func newCompiler() (*Compiler) {
 
     c.builder = llvm.NewBuilder()
     c.mod = llvm.NewModule("asm_module")
+    c.addrToBlock = map[int]*llvm.BasicBlock{}
 
     return c
 }
@@ -120,6 +125,10 @@ func (c *Compiler) createCBindings() {
     random_uint8_fn_type := llvm.FunctionType(llvm.Int8Type(), []llvm.Type{}, false)
     c.random_uint8_fn = llvm.AddFunction(c.mod, "random_uint8", random_uint8_fn_type)
     c.random_uint8_fn.SetLinkage(llvm.ExternalLinkage)
+
+    draw_fn_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{llvm.Int8Type()}, false)
+    c.draw_fn = llvm.AddFunction(c.mod, "draw", draw_fn_type)
+    c.draw_fn.SetLinkage(llvm.ExternalLinkage)
 }
 
 func (c *Compiler) createRegisters() {
@@ -153,28 +162,99 @@ func (c *Compiler) createMain() {
     c.selectBlock(entry)
 }
 
-func (c *Compiler) compile(rom *Rom) error {
-    for _, inst := range rom.instructions {
-        fmt.Printf("%#v\n", inst)
+func (c *Compiler) addBasicBlock(bb *BasicBlock) {
+        block := llvm.AddBasicBlock(c.mainFn, fmt.Sprintf("block_%x", bb.addr))
+        c.addrToBlock[bb.addr] = &block
+}
+
+func (c *Compiler) createBasicBlocks(cfg *BasicBlock) {
+    visited := map[int]bool{}
+
+    for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
+        c.addBasicBlock(bb)
+
+        if bb.fallthrough_successor != nil {
+            c.addBasicBlock(bb.fallthrough_successor)
+        }
+
+        visited[bb.addr] = true
     }
+}
+
+func (c *Compiler) compileBb(bb *BasicBlock) (*llvm.BasicBlock, error) {
+    c.bb = bb
+
+    block := c.addrToBlock[bb.addr]
+    c.selectBlock(*block)
+
+
+    for _, inst := range bb.instructions {
+        err := inst.compile(c)
+
+        if err != nil {
+            return nil, err
+        }
+    }
+
+    return block, nil
+}
+
+func (c *Compiler) fixUnterminatedBasicBlocks(cfg *BasicBlock) {
+    visited := map[int]bool{}
+
+    for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
+        visited[bb.addr] = true
+
+        if !bb.willNeedTermination {
+            continue
+        }
+        currBlock := c.addrToBlock[bb.addr]
+        succBlock := c.addrToBlock[bb.jump_successor.addr]
+
+        c.selectBlock(*currBlock)
+        c.builder.CreateBr(*succBlock)
+    }
+
+}
+
+func (c *Compiler) linkEntryToFirstBlock(cfg *BasicBlock) {
+    firstBlock := c.addrToBlock[cfg.addr]
+
+    c.selectBlock(c.mainFn.FirstBasicBlock())
+    c.builder.CreateBr(*firstBlock)
+}
+
+func (c *Compiler) compile(rom *Rom) error {
 
     c.createRegisters()
     c.createCBindings()
     c.createMain()
 
-    err := compile_instructions(rom.instructions, c)
-    if err != nil {
-        c.mod.Dump()
-        return err
+    _, cfg := AnalyzeFlow(rom.bytes)
+
+    c.createBasicBlocks(cfg)
+
+    visited := map[int]bool{}
+    for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
+        _, err := c.compileBb(bb)
+        if err != nil {
+            return err
+        }
+
+        visited[bb.addr] = true
     }
 
-    result := llvm.ConstInt(llvm.Int32Type(), 42, false)
-    c.builder.CreateRet(result)
+    c.fixUnterminatedBasicBlocks(cfg)
+    c.linkEntryToFirstBlock(cfg)
 
-    err = llvm.VerifyModule(c.mod, llvm.ReturnStatusAction)
+    // result := llvm.ConstInt(llvm.Int32Type(), 42, false)
+    // c.builder.CreateRet(result)
+
+    err := llvm.VerifyModule(c.mod, llvm.ReturnStatusAction)
     if err != nil {
         return err
     }
+    c.mod.Dump()
 
     return nil
 }

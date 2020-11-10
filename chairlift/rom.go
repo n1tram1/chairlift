@@ -18,33 +18,8 @@ func OpenRom(filename string) (*Rom, error) {
     rom := new(Rom)
     rom.bytes = bytes
 
-    cfg := AnalyzeFlow(bytes)
-    Dump(cfg)
-
-    panic("")
+    _, rom.cfg = AnalyzeFlow(bytes)
+    Dump(rom.cfg)
 
     return rom, nil
 }
-
-func (r *Rom) GetInstruction(addr int) Instruction {
-    return &Sys{}
-    // return r.instructions[addr - 0x200]
-}
-
-func (r *Rom) Iterate(f func(addr int, inst Instruction) error) error {
-    return nil
-    // for addr := 0x200; addr < r.maxCode; addr += 2 {
-    //     inst := r.GetInstruction(addr)
-    //     if inst == nil {
-    //         continue
-    //     }
-    //
-    //     err := f(addr, inst)
-    //     if err != nil {
-    //         return err
-    //     }
-    // }
-    //
-    // return nil
-}
-

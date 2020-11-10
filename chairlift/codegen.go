@@ -5,17 +5,6 @@ import (
     "errors"
 )
 
-func compile_instructions(instructions []Instruction, c *Compiler) error {
-    for _, inst := range instructions {
-        err := inst.compile(c)
-        if err != nil {
-            return err
-        }
-    }
-
-    return nil
-}
-
 func (cls *Cls) compile(c *Compiler) error {
     return errors.New("unimplemented instruction Cls in codegen")
 }
@@ -29,7 +18,11 @@ func (sys *Sys) compile(c* Compiler) error {
 }
 
 func (jp *JpAddr) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction JpAddr in codegen")
+    dest := c.addrToBlock[int(jp.addr)]
+
+    c.builder.CreateBr(*dest)
+
+    return nil
 }
 
 func (call *CallAddr) compile(c *Compiler) error {
@@ -37,17 +30,31 @@ func (call *CallAddr) compile(c *Compiler) error {
 }
 
 func (se *SeVxByte) compile(c *Compiler) error {
-    reg := c.VRegToLLVMValue(se.vx)
+    reg := c.builder.CreateLoad(c.VRegToLLVMValue(se.vx), "")
     val := c.ConstUint8(se.kk)
 
-    then_block := llvm.InsertBasicBlock(*c.currentBlock, "then")
-    else_block := llvm.InsertBasicBlock(then_block, "else")
+    bb := c.bb
+    currentBlock := c.currentBlock
+
+    fallthrough_block, err := c.compileBb(bb.fallthrough_successor)
+    if err != nil {
+        return err
+    }
+
+    jump_block := c.addrToBlock[bb.jump_successor.addr]
+
+    if bb.fallthrough_successor.willNeedTermination {
+        c.builder.CreateBr(*jump_block)
+        bb.fallthrough_successor.willNeedTermination = false
+    }
+
+    c.selectBlock(*currentBlock)
 
     regEqualsVal := c.builder.CreateICmp(llvm.IntEQ, reg, val, "")
 
-    c.builder.CreateCondBr(regEqualsVal, then_block, else_block)
+    c.builder.CreateCondBr(regEqualsVal, *jump_block, *fallthrough_block)
 
-    c.selectBlock(then_block)
+    c.selectBlock(*fallthrough_block)
 
     return nil
 }
@@ -70,9 +77,11 @@ func (ld *LdVxByte) compile(c *Compiler) error {
 }
 
 func (add *AddVxByte) compile(c *Compiler) error {
-    operation := c.builder.CreateAdd(c.VRegToLLVMValue(add.vx), c.ConstUint8(add.kk), "")
+    dest := c.VRegToLLVMValue(add.vx)
+    vx_val := c.builder.CreateLoad(dest, "")
+    operation_res := c.builder.CreateAdd(vx_val, c.ConstUint8(add.kk), "")
 
-    c.builder.CreateStore(operation, c.VRegToLLVMValue(add.vx))
+    c.builder.CreateStore(operation_res, dest)
 
     return nil
 }

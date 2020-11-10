@@ -5,8 +5,10 @@ import (
     "fmt"
 )
 
+const INSTRUCTION_SIZE = 2
+
 type Instruction interface {
-    compile(*Compiler) error
+    compile(*Compiler) error 
 }
 
 type VReg uint8
@@ -349,9 +351,9 @@ func disassemble_bytes(bytes []byte) ([]Instruction, error) {
         return nil, errors.New("expected at least 2 bytes")
     }
 
-    instructions := make([]Instruction, 0, len(bytes) / 2)
+    instructions := make([]Instruction, 0, len(bytes) / INSTRUCTION_SIZE)
 
-    for i := 0; i < len(bytes); i += 2 {
+    for i := 0; i < len(bytes); i += INSTRUCTION_SIZE {
         word := uint16(bytes[i]) << 8 | uint16(bytes[i + 1])
 
         inst, err := disassemble(word)

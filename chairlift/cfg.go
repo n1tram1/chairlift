@@ -8,7 +8,7 @@ type BasicBlock struct {
     addr int
 
     instructions []Instruction
-    // successors []*BasicBlock
+    willNeedTermination bool
 
     fallthrough_successor *BasicBlock
     jump_successor *BasicBlock
@@ -68,6 +68,7 @@ func Dump(bb *BasicBlock) {
 func (bb *BasicBlock) split(addr int) *BasicBlock {
         new_bb := &BasicBlock{}
         new_bb.addr = bb.addr
+        new_bb.willNeedTermination = true
 
         if addr == 0x200 || bb.addr == 0x200 {
             fmt.Println("")
@@ -84,7 +85,7 @@ func (bb *BasicBlock) split(addr int) *BasicBlock {
         return new_bb
 }
 
-func (an *flowAnalyzer) redirectSuccessors(from, to *BasicBlock) {
+func (an *FlowAnalyzer) redirectSuccessors(from, to *BasicBlock) {
     for _, block := range an.addrToBlock {
         if block.jump_successor == from {
             block.jump_successor = to
@@ -96,7 +97,7 @@ func (an *flowAnalyzer) redirectSuccessors(from, to *BasicBlock) {
     }
 }
 
-func (an *flowAnalyzer) correspondingBlock(addr int) *BasicBlock {
+func (an *FlowAnalyzer) correspondingBlock(addr int) *BasicBlock {
     var found *BasicBlock
 
     for _, bb := range an.addrToBlock {
@@ -110,7 +111,6 @@ func (an *flowAnalyzer) correspondingBlock(addr int) *BasicBlock {
         found = &BasicBlock{}
         found.addr = addr
         found.instructions = []Instruction{}
-
     } else if found != nil && found.addr != addr {
         split := found.split(addr)
 
@@ -124,28 +124,70 @@ func (an *flowAnalyzer) correspondingBlock(addr int) *BasicBlock {
     return found 
 }
 
-type flowAnalyzer struct {
+type InstructionPair struct {
+    addr int
+    instruction *Instruction
+}
+
+type FlowAnalyzer struct {
     instructions map[int]Instruction
+    orderedInstructions []InstructionPair
 
     addrToBlock map[int]*BasicBlock
 }
 
-func AnalyzeFlow(bytes []byte) *BasicBlock {
-    analyzer := flowAnalyzer{}
+func AnalyzeFlow(bytes []byte) (*FlowAnalyzer, *BasicBlock) {
+    analyzer := FlowAnalyzer{}
     analyzer.instructions = map[int]Instruction{}
+    analyzer.orderedInstructions = make([]InstructionPair, len(bytes) / INSTRUCTION_SIZE)
     analyzer.addrToBlock = map[int]*BasicBlock{}
 
     analyzer.analyze(bytes, 0)
+    // analyzer.discoverCode(bytes, 0)
 
-    return analyzer.addrToBlock[0x200]
+    return &analyzer, analyzer.addrToBlock[0x200]
 }
 
-func (an *flowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
-    bb :=  an.correspondingBlock(index + 0x200)
+func (an *FlowAnalyzer) discoverCode(bytes []byte, index int) error {
+    for ; index < len(bytes) - 1 && an.instructions[index] == nil; index += INSTRUCTION_SIZE {
+        opcode := uint16(bytes[index]) << 8 | uint16(bytes[index + 1])
 
-    if bb.addr == 0x200 {
-        fmt.Printf("0x200: %#v\n", bb)
+        inst, err := disassemble(opcode)
+        if err != nil {
+            return nil
+        }
+
+        an.instructions[index] = inst
+        an.orderedInstructions = append(an.orderedInstructions, InstructionPair{index + 0x200, &inst})
+
+        if isJump(inst) {
+            // Nothing to discover after this because it's a jump.
+            destination := int(getJumpDestination(inst))
+            destinationAsIndex := destination - 0x200
+
+            err := an.discoverCode(bytes, destinationAsIndex)
+            if err != nil {
+                return err
+            }
+
+            break
+        }
+
+        if isBranch(inst) {
+            possibleDestinationIndex := getBranchPossibleDestination(index)
+
+            err := an.discoverCode(bytes, possibleDestinationIndex)
+            if err != nil {
+                return err
+            }
+        }
     }
+
+    return nil
+}
+
+func (an *FlowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
+    bb :=  an.correspondingBlock(index + 0x200)
 
     for ; index < len(bytes) - 1 && an.instructions[index] == nil; index += 2 {
         opcode := uint16(bytes[index]) << 8 | uint16(bytes[index + 1])
@@ -188,6 +230,7 @@ func (an *flowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
 
                 if discovered_fallthrough.jump_successor == nil {
                     discovered_fallthrough.jump_successor = discovered_branch
+                    discovered_fallthrough.willNeedTermination = true
                 }
             }
 
