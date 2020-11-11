@@ -7,6 +7,11 @@ import (
     "fmt"
 )
 
+const (
+    PROG_START = 0x200
+    RAM_SIZE = 0xFFF
+)
+
 type Compiler struct {
     builder llvm.Builder
     mod llvm.Module
@@ -21,6 +26,8 @@ type Compiler struct {
     // Runtime C functions
     random_uint8_fn llvm.Value
     draw_fn llvm.Value
+
+    ram llvm.Value
 
     // Registers
     reg_i llvm.Value
@@ -113,22 +120,141 @@ func (c *Compiler) createNamedGlobal(intType llvm.Type, name string) llvm.Value 
     return glob
 }
 
-func (c *Compiler) createWordRegister(name string) llvm.Value {
-    return c.createNamedGlobal(llvm.Int16Type(), name)
+func (c *Compiler) addInterpreterData(ram *[]llvm.Value) {
+    // Add '0' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add '1' sprite
+    *ram = append(*ram, c.ConstUint8(0x20))
+    *ram = append(*ram, c.ConstUint8(0x60))
+    *ram = append(*ram, c.ConstUint8(0x20))
+    *ram = append(*ram, c.ConstUint8(0x20))
+    *ram = append(*ram, c.ConstUint8(0x70))
+
+    // Add '3' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x10))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x10))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add '4' sprite
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x10))
+    *ram = append(*ram, c.ConstUint8(0x10))
+
+    // Add '5' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x10))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add '6' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add '7' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x10))
+    *ram = append(*ram, c.ConstUint8(0x20))
+    *ram = append(*ram, c.ConstUint8(0x40))
+    *ram = append(*ram, c.ConstUint8(0x40))
+
+    // Add '8' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add '9' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x10))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add 'A' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0x90))
+
+    // Add 'B' sprite
+    *ram = append(*ram, c.ConstUint8(0xE0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xE0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xE0))
+
+    // Add 'C' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add 'D' sprite
+    *ram = append(*ram, c.ConstUint8(0xE0))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0x90))
+    *ram = append(*ram, c.ConstUint8(0xE0))
+
+    // Add 'E' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+
+    // Add 'F' sprite
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0xF0))
+    *ram = append(*ram, c.ConstUint8(0x80))
+    *ram = append(*ram, c.ConstUint8(0x80))
+
+    for len(*ram) < PROG_START {
+        *ram = append(*ram, c.ConstUint8(0))
+    }
 }
 
-func (c *Compiler) createByteRegister(name string) llvm.Value {
-    return c.createNamedGlobal(llvm.Int8Type(), name)
+func (c *Compiler) addRemainingZeros(ram *[]llvm.Value) {
+    for len(*ram) < RAM_SIZE {
+        *ram = append(*ram, c.ConstUint8(0))
+    }
 }
 
-func (c *Compiler) createCBindings() {
-    random_uint8_fn_type := llvm.FunctionType(llvm.Int8Type(), []llvm.Type{}, false)
-    c.random_uint8_fn = llvm.AddFunction(c.mod, "random_uint8", random_uint8_fn_type)
-    c.random_uint8_fn.SetLinkage(llvm.ExternalLinkage)
+func (c *Compiler) createRamArray(bytes []byte) {
+    ramValues := make([]llvm.Value, 0, RAM_SIZE)
 
-    draw_fn_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{llvm.Int8Type()}, false)
-    c.draw_fn = llvm.AddFunction(c.mod, "draw", draw_fn_type)
-    c.draw_fn.SetLinkage(llvm.ExternalLinkage)
+    c.addInterpreterData(&ramValues)
+
+    for _, b := range bytes {
+        val := c.ConstUint8(b)
+        ramValues = append(ramValues, val)
+    }
+
+    c.addRemainingZeros(&ramValues)
+
+    ramConst := llvm.ConstArray(llvm.ArrayType(llvm.Int8Type(), len(ramValues)), ramValues)
+
+    c.ram = llvm.AddGlobal(c.mod, ramConst.Type(), "ram")
+    c.ram.SetLinkage(llvm.PrivateLinkage)
+    c.ram.SetInitializer(ramConst)
+    c.ram.SetGlobalConstant(true)
 }
 
 func (c *Compiler) createRegisters() {
@@ -150,6 +276,14 @@ func (c *Compiler) createRegisters() {
     c.reg_vD = c.createByteRegister("VD")
     c.reg_vE = c.createByteRegister("VE")
     c.reg_vF = c.createByteRegister("VF")
+}
+
+func (c *Compiler) createWordRegister(name string) llvm.Value {
+    return c.createNamedGlobal(llvm.Int16Type(), name)
+}
+
+func (c *Compiler) createByteRegister(name string) llvm.Value {
+    return c.createNamedGlobal(llvm.Int8Type(), name)
 }
 
 func (c *Compiler) createMain() {
@@ -225,10 +359,12 @@ func (c *Compiler) linkEntryToFirstBlock(cfg *BasicBlock) {
 }
 
 func (c *Compiler) compile(rom *Rom) error {
+    c.createMain()
+    c.createRamArray(rom.bytes)
 
     c.createRegisters()
     c.createCBindings()
-    c.createMain()
+
 
     _, cfg := AnalyzeFlow(rom.bytes)
 
@@ -246,9 +382,6 @@ func (c *Compiler) compile(rom *Rom) error {
 
     c.fixUnterminatedBasicBlocks(cfg)
     c.linkEntryToFirstBlock(cfg)
-
-    // result := llvm.ConstInt(llvm.Int32Type(), 42, false)
-    // c.builder.CreateRet(result)
 
     err := llvm.VerifyModule(c.mod, llvm.ReturnStatusAction)
     if err != nil {
