@@ -5,6 +5,8 @@ import (
     "fmt"
     "os"
     "log"
+    "strings"
+    "path"
 )
 
 func main() {
@@ -18,7 +20,9 @@ func main() {
         }
         fmt.Println("rom: ", rom)
 
-        _, err = chairlift.CompileRomToFile(rom, "a.out")
+        name := strings.TrimSuffix(arg, path.Ext(arg))
+
+        _, err = chairlift.CompileRomToFile(rom, name + ".bc")
         if err != nil {
             log.Fatal(err)
             continue
