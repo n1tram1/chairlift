@@ -147,8 +147,10 @@ func (rnd *Rnd) compile(c *Compiler) error {
 }
 
 func (drw *DrwVxVy) compile(c *Compiler) error {
+    vx := c.builder.CreateLoad(c.VRegToLLVMValue(drw.vx), "")
+    vy := c.builder.CreateLoad(c.VRegToLLVMValue(drw.vy), "")
     n := c.ConstUint8(drw.n)
-    c.builder.CreateCall(c.draw_fn, []llvm.Value{n}, "")
+    c.builder.CreateCall(c.draw_fn, []llvm.Value{vx, vy, c.ram, n, c.reg_vF}, "")
 
     return nil
 }

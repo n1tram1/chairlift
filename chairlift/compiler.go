@@ -296,6 +296,17 @@ func (c *Compiler) createMain() {
     c.selectBlock(entry)
 }
 
+func (c *Compiler) createCBindings() {
+    random_uint8_fn_type := llvm.FunctionType(llvm.Int8Type(), []llvm.Type{}, false)
+    c.random_uint8_fn = llvm.AddFunction(c.mod, "random_uint8", random_uint8_fn_type)
+    c.random_uint8_fn.SetLinkage(llvm.ExternalLinkage)
+
+    // void draw(uint8_t vx, uint8_t vy, uint8_t *ram, uint8_t n, uint8_t *collision)
+    draw_fn_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{llvm.Int8Type(), llvm.Int8Type(), c.ram.Type(), llvm.Int8Type(), llvm.PointerType(llvm.Int8Type(), 0)}, false)
+    c.draw_fn = llvm.AddFunction(c.mod, "draw", draw_fn_type)
+    c.draw_fn.SetLinkage(llvm.ExternalLinkage)
+}
+
 func (c *Compiler) addBasicBlock(bb *BasicBlock) {
         block := llvm.AddBasicBlock(c.mainFn, fmt.Sprintf("block_%x", bb.addr))
         c.addrToBlock[bb.addr] = &block
