@@ -23,9 +23,11 @@ type Compiler struct {
 
     mainFn llvm.Value
 
-    // Runtime C functions
+    // C runtime functions
+    init_runtime_fn llvm.Value
     random_uint8_fn llvm.Value
     draw_fn llvm.Value
+    clear_display_fn llvm.Value
 
     ram llvm.Value
 
@@ -294,6 +296,8 @@ func (c *Compiler) createMain() {
 
     entry := llvm.AddBasicBlock(c.mainFn, "entry")
     c.selectBlock(entry)
+
+    c.builder.CreateCall(c.init_runtime_fn, []llvm.Value{}, "")
 }
 
 func (c *Compiler) createCBindings() {
@@ -301,10 +305,18 @@ func (c *Compiler) createCBindings() {
     c.random_uint8_fn = llvm.AddFunction(c.mod, "random_uint8", random_uint8_fn_type)
     c.random_uint8_fn.SetLinkage(llvm.ExternalLinkage)
 
-    // void draw(uint8_t vx, uint8_t vy, uint8_t *ram, uint8_t n, uint8_t *collision)
-    draw_fn_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{llvm.Int8Type(), llvm.Int8Type(), c.ram.Type(), llvm.Int8Type(), llvm.PointerType(llvm.Int8Type(), 0)}, false)
+    // void draw(uint8_t vx, uint8_t vy, uint16_t I, uint8_t *ram, uint8_t n, uint8_t *collision)
+    draw_fn_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{llvm.Int8Type(), llvm.Int8Type(), llvm.Int16Type(), c.ram.Type(), llvm.Int8Type(), llvm.PointerType(llvm.Int8Type(), 0)}, false)
     c.draw_fn = llvm.AddFunction(c.mod, "draw", draw_fn_type)
     c.draw_fn.SetLinkage(llvm.ExternalLinkage)
+
+    init_runtime_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{}, false)
+    c.init_runtime_fn = llvm.AddFunction(c.mod, "init_runtime", init_runtime_type)
+    c.init_runtime_fn.SetLinkage(llvm.ExternalLinkage)
+
+    clear_fn_type := llvm.FunctionType(llvm.VoidType(), []llvm.Type{}, false)
+    c.clear_display_fn = llvm.AddFunction(c.mod, "clear_display", clear_fn_type)
+    c.clear_display_fn.SetLinkage(llvm.ExternalLinkage)
 }
 
 func (c *Compiler) addBasicBlock(bb *BasicBlock) {
@@ -370,11 +382,12 @@ func (c *Compiler) linkEntryToFirstBlock(cfg *BasicBlock) {
 }
 
 func (c *Compiler) compile(rom *Rom) error {
-    c.createMain()
     c.createRamArray(rom.bytes)
-
     c.createRegisters()
+
     c.createCBindings()
+
+    c.createMain()
 
 
     _, cfg := AnalyzeFlow(rom.bytes)

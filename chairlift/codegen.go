@@ -6,7 +6,9 @@ import (
 )
 
 func (cls *Cls) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction Cls in codegen")
+    c.builder.CreateCall(c.clear_display_fn, []llvm.Value{}, "")
+
+    return nil
 }
 
 func (ret  *Ret) compile(c *Compiler) error {
@@ -149,8 +151,9 @@ func (rnd *Rnd) compile(c *Compiler) error {
 func (drw *DrwVxVy) compile(c *Compiler) error {
     vx := c.builder.CreateLoad(c.VRegToLLVMValue(drw.vx), "")
     vy := c.builder.CreateLoad(c.VRegToLLVMValue(drw.vy), "")
+    I := c.builder.CreateLoad(c.reg_i, "")
     n := c.ConstUint8(drw.n)
-    c.builder.CreateCall(c.draw_fn, []llvm.Value{vx, vy, c.ram, n, c.reg_vF}, "")
+    c.builder.CreateCall(c.draw_fn, []llvm.Value{vx, vy, I, c.ram, n, c.reg_vF}, "")
 
     return nil
 }
