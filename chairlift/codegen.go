@@ -3,6 +3,7 @@ package chairlift
 import (
     llvm "github.com/tinygo-org/go-llvm"
     "errors"
+    "fmt"
 )
 
 func (cls *Cls) compile(c *Compiler) error {
@@ -89,7 +90,11 @@ func (add *AddVxByte) compile(c *Compiler) error {
 }
 
 func (ld *LdVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction LdVxVy in codegen")
+    vy := c.builder.CreateLoad(c.VRegToLLVMValue(ld.vy), "")
+
+    c.builder.CreateStore(vy, c.VRegToLLVMValue(ld.vx))
+
+    return nil
 }
 
 func (or *OrVxVy) compile(c *Compiler) error {
@@ -183,7 +188,13 @@ func (ld *LdStVx) compile(c *Compiler) error {
 }
 
 func (add *AddIVx) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction AddIVx in codegen")
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(add.vx), "")
+    i_val := c.builder.CreateLoad(c.reg_i, "")
+    res := c.builder.CreateAdd(vx_val, i_val, "")
+
+    c.builder.CreateStore(res, c.reg_i)
+
+    return nil
 }
 
 func (ld *LdFVx) compile(c *Compiler) error {
@@ -195,9 +206,35 @@ func (ld *LdBVx) compile(c *Compiler) error {
 }
 
 func (ld *LdIVx) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction LdIVx in codegen")
+
+    for i := VReg(0); i <= ld.vx; i++ {
+        ptr := llvm.ConstGEP(
+            c.ram,
+            []llvm.Value{
+                c.builder.CreateLoad(c.reg_i, ""),
+                c.ConstUint16(uint16(i)),
+            },
+        )
+
+        mem_val := c.builder.CreateLoad(ptr, fmt.Sprintf("load_%v", i))
+        c.builder.CreateStore(mem_val, c.VRegToLLVMValue(i))
+    }
+
+    return nil
 }
 
 func (ld *LdVxI) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction LdVxI in codegen")
+    for i := VReg(0); i <= ld.vx; i++ {
+        ptr := llvm.ConstGEP(
+            c.ram,
+            []llvm.Value{
+                c.builder.CreateLoad(c.reg_i, ""),
+                c.ConstUint16(uint16(i)),
+            },
+        )
+
+        c.builder.CreateStore(c.builder.CreateLoad(c.VRegToLLVMValue(i), ""), ptr)
+    }
+
+    return nil
 }

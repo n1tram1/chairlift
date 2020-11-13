@@ -99,6 +99,12 @@ func (c *Compiler) ConstUint16(x uint16) llvm.Value {
     return llvm.ConstInt(llvm.Int16Type(), uint64(x), false)
 }
 
+func (c *Compiler) LoadFromAddr(addr llvm.Value) llvm.Value {
+    ram_ptr := c.builder.CreateAdd(c.ram, addr, "")
+
+    return c.builder.CreateLoad(ram_ptr, "")
+}
+
 func (c *Compiler) selectBlock(bb llvm.BasicBlock) {
     c.builder.SetInsertPointAtEnd(bb)
     c.currentBlock = &bb
@@ -398,6 +404,7 @@ func (c *Compiler) compile(rom *Rom) error {
     for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
         _, err := c.compileBb(bb)
         if err != nil {
+            c.mod.Dump()
             return err
         }
 
