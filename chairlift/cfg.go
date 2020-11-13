@@ -12,7 +12,6 @@ type BasicBlock struct {
 
     fallthrough_successor *BasicBlock
     jump_successor *BasicBlock
-
 }
 
 func (bb *BasicBlock) contains(addr int) bool {
@@ -44,7 +43,11 @@ func (bb *BasicBlock) dump(visited map[*BasicBlock]bool) {
         addr += 2
     }
 
-    fmt.Printf("\"%p\" [label=\"%v\"]\n", bb, node_label)
+    if bb.willNeedTermination {
+        fmt.Printf("\"%p\" [label=\"%v\" color=red]\n", bb, node_label)
+    } else {
+        fmt.Printf("\"%p\" [label=\"%v\"]\n", bb, node_label)
+    }
 
     if bb.fallthrough_successor != nil {
         bb.fallthrough_successor.dump(visited)
@@ -131,7 +134,6 @@ type InstructionPair struct {
 
 type FlowAnalyzer struct {
     instructions map[int]Instruction
-    orderedInstructions []InstructionPair
 
     addrToBlock map[int]*BasicBlock
 }
@@ -139,16 +141,19 @@ type FlowAnalyzer struct {
 func AnalyzeFlow(bytes []byte) (*FlowAnalyzer, *BasicBlock) {
     analyzer := FlowAnalyzer{}
     analyzer.instructions = map[int]Instruction{}
-    analyzer.orderedInstructions = make([]InstructionPair, len(bytes) / INSTRUCTION_SIZE)
     analyzer.addrToBlock = map[int]*BasicBlock{}
 
-    analyzer.analyze(bytes, 0)
-    // analyzer.discoverCode(bytes, 0)
+    analyzer.discoverCode(bytes, 0)
+
+    visited := map[int]bool{}
+    analyzer.analyze(bytes, 0, visited)
 
     return &analyzer, analyzer.addrToBlock[0x200]
 }
 
 func (an *FlowAnalyzer) discoverCode(bytes []byte, index int) error {
+    an.addrToBlock[index + 0x200] = &BasicBlock{addr:index + 0x200, instructions: []Instruction{}}
+
     for ; index < len(bytes) - 1 && an.instructions[index] == nil; index += INSTRUCTION_SIZE {
         opcode := uint16(bytes[index]) << 8 | uint16(bytes[index + 1])
 
@@ -158,7 +163,6 @@ func (an *FlowAnalyzer) discoverCode(bytes []byte, index int) error {
         }
 
         an.instructions[index] = inst
-        an.orderedInstructions = append(an.orderedInstructions, InstructionPair{index + 0x200, &inst})
 
         if isJump(inst) {
             // Nothing to discover after this because it's a jump.
@@ -180,24 +184,33 @@ func (an *FlowAnalyzer) discoverCode(bytes []byte, index int) error {
             if err != nil {
                 return err
             }
+
+            err = an.discoverCode(bytes, index + 2)
+            if err != nil {
+                return err
+            }
+
+            break
         }
     }
 
     return nil
 }
 
-func (an *FlowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
-    bb :=  an.correspondingBlock(index + 0x200)
+func (an *FlowAnalyzer) analyze(bytes []byte, index int, visited map[int]bool) *BasicBlock {
+    // bb :=  an.correspondingBlock(index + 0x200)
+    bb := an.addrToBlock[index + 0x200]
 
-    for ; index < len(bytes) - 1 && an.instructions[index] == nil; index += 2 {
-        opcode := uint16(bytes[index]) << 8 | uint16(bytes[index + 1])
+    for ; index < len(bytes) - 1 && !visited[index + 0x200]; index += 2 {
+        visited[index + 0x200] = true
+        // opcode := uint16(bytes[index]) << 8 | uint16(bytes[index + 1])
+        //
+        // inst, err := disassemble(opcode)
+        // if err != nil {
+        //     return nil
+        // }
 
-        inst, err := disassemble(opcode)
-        if err != nil {
-            return nil
-        }
-
-        an.instructions[index] = inst
+        inst := an.instructions[index]
         bb.instructions = append(bb.instructions, inst)
 
         if isJump(inst) {
@@ -205,7 +218,7 @@ func (an *FlowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
             destination := int(getJumpDestination(inst))
             destinationAsIndex := destination - 0x200
 
-            discovered := an.analyze(bytes, destinationAsIndex)
+            discovered := an.analyze(bytes, destinationAsIndex, visited)
 
             if discovered != nil {
                 bb.jump_successor = discovered
@@ -218,8 +231,8 @@ func (an *FlowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
             // destinationAsIndex := getBranchPossibleDestination(index)
 
 
-            discovered_branch := an.analyze(bytes, index + 4)
-            discovered_fallthrough := an.analyze(bytes, index + 2)
+            discovered_branch := an.analyze(bytes, index + 4, visited)
+            discovered_fallthrough := an.analyze(bytes, index + 2, visited)
 
             if discovered_branch != nil {
                 bb.jump_successor = discovered_branch
@@ -236,9 +249,27 @@ func (an *FlowAnalyzer) analyze(bytes []byte, index int) *BasicBlock {
 
             break
         }
+
+        if an.addrToBlock[index + 0x200 + INSTRUCTION_SIZE] != nil {
+            bb.jump_successor = an.analyze(bytes, index + INSTRUCTION_SIZE, visited)
+
+            break
+        }
+    }
+
+    if len(bb.instructions) > 0{
+        last_inst := bb.instructions[len(bb.instructions) - 1]
+
+        if !isTerminator(last_inst) {
+            bb.willNeedTermination = true
+        }
     }
 
     return bb
+}
+
+func isTerminator(inst Instruction) bool {
+    return isJump(inst) || isBranch(inst)
 }
 
 func isJump(inst Instruction) bool {
@@ -276,5 +307,5 @@ func getJumpDestination(inst Instruction) uint16 {
 }
 
 func getBranchPossibleDestination(addr_or_offset int) int {
-    return addr_or_offset + 2
+    return addr_or_offset + 4
 }
