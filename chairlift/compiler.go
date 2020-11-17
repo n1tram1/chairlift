@@ -299,6 +299,14 @@ func (c *Compiler) createRegisters() {
     c.reg_vF = c.createByteRegister("VF")
 }
 
+func (c *Compiler) CastU8(val llvm.Value) llvm.Value {
+    return c.builder.CreateCast(val, llvm.ZExt, llvm.Int8Type(), "")
+}
+
+func (c *Compiler) CastU16(val llvm.Value) llvm.Value {
+    return c.builder.CreateCast(val, llvm.ZExt, llvm.Int16Type(), "")
+}
+
 func (c *Compiler) createWordRegister(name string) llvm.Value {
     return c.createNamedGlobal(llvm.Int16Type(), name)
 }

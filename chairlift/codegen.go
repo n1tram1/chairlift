@@ -114,11 +114,38 @@ func (xor *XorVxVy) compile(c *Compiler) error {
 }
 
 func (add *AddVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction AddVxVy in codegen")
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(add.vx), "")
+    vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(add.vy), "")
+    result := c.builder.CreateAdd(vx_val, vy_val, "")
+
+    smallerThanVx := c.builder.CreateICmp(llvm.IntULT, result, vx_val, "smallerThanVx")
+    smallerThanVy := c.builder.CreateICmp(llvm.IntULT, result, vy_val, "smallerThanVy")
+    tmp := c.builder.CreateAdd(c.CastU8(smallerThanVx), c.CastU8(smallerThanVy), "tmp")
+    check_overflow := c.CastU8(c.builder.CreateICmp(llvm.IntUGE, tmp, c.ConstUint8(1), "check_overflow"))
+
+    c.builder.CreateStore(check_overflow, c.reg_vF)
+
+    c.builder.CreateStore(result, c.VRegToLLVMValue(add.vx))
+
+    return nil
 }
 
 func (sub *SubVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction SubVxVy in codegen")
+    // TODO: I'm 100% sure `check_overflow` is wrong
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(sub.vx), "")
+    vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(sub.vy), "")
+    result := c.builder.CreateSub(vx_val, vy_val, "")
+
+    greaterThanVx := c.builder.CreateICmp(llvm.IntUGT, result, vx_val, "greaterThanVx")
+    greaterThanVy := c.builder.CreateICmp(llvm.IntUGT, result, vy_val, "greaterThanVy")
+    tmp := c.builder.CreateAdd(c.CastU8(greaterThanVx), c.CastU8(greaterThanVy), "tmp")
+    check_underflow := c.CastU8(c.builder.CreateICmp(llvm.IntUGE, tmp, c.ConstUint8(1), "check_overflow"))
+
+    c.builder.CreateStore(check_underflow, c.reg_vF)
+
+    c.builder.CreateStore(result, c.VRegToLLVMValue(sub.vx))
+
+    return nil
 }
 
 func (shr *ShrVxVy) compile(c *Compiler) error {
@@ -200,8 +227,9 @@ func (ld *LdStVx) compile(c *Compiler) error {
 
 func (add *AddIVx) compile(c *Compiler) error {
     vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(add.vx), "")
+    vx_val_as_u16 := c.CastU16(vx_val)
     i_val := c.builder.CreateLoad(c.reg_i, "")
-    res := c.builder.CreateAdd(llvm.ConstBitCast(vx_val, i_val.Type()), i_val, "")
+    res := c.builder.CreateAdd(vx_val_as_u16, i_val, fmt.Sprintf("AddIVx_%x", c.bb.addr))
 
     c.builder.CreateStore(res, c.reg_i)
 
@@ -216,15 +244,16 @@ func (ld *LdBVx) compile(c *Compiler) error {
     return errors.New("unimplemented instruction LdBVx in codegen")
 }
 
+// TODO: GEP related stuff causes a segfault
 func (ld *LdIVx) compile(c *Compiler) error {
-
     for i := VReg(0); i <= ld.vx; i++ {
-        ptr := llvm.ConstGEP(
+        ptr := c.builder.CreateGEP(
             c.ram,
             []llvm.Value{
                 c.builder.CreateLoad(c.reg_i, ""),
                 c.ConstUint16(uint16(i)),
             },
+            "",
         )
 
         mem_val := c.builder.CreateLoad(ptr, fmt.Sprintf("load_%v", i))
@@ -236,12 +265,13 @@ func (ld *LdIVx) compile(c *Compiler) error {
 
 func (ld *LdVxI) compile(c *Compiler) error {
     for i := VReg(0); i <= ld.vx; i++ {
-        ptr := llvm.ConstGEP(
+        ptr := c.builder.CreateGEP(
             c.ram,
             []llvm.Value{
                 c.builder.CreateLoad(c.reg_i, ""),
                 c.ConstUint16(uint16(i)),
             },
+            "",
         )
 
         c.builder.CreateStore(c.builder.CreateLoad(c.VRegToLLVMValue(i), ""), ptr)
