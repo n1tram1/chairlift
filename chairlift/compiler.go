@@ -346,15 +346,37 @@ func (c *Compiler) addBasicBlock(bb *BasicBlock) {
 func (c *Compiler) createBasicBlocks(cfg *BasicBlock) {
     visited := map[int]bool{}
 
-    for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
-        c.addBasicBlock(bb)
+    c.rec_createBasicBlocks(cfg, visited)
+}
 
-        if bb.fallthrough_successor != nil {
-            c.addBasicBlock(bb.fallthrough_successor)
-        }
-
+func (c *Compiler) rec_createBasicBlocks(bb *BasicBlock, visited map[int]bool) {
+    if visited[bb.addr] {
+        return
+    } else {
         visited[bb.addr] = true
     }
+
+    c.addBasicBlock(bb)
+
+
+    if bb.fallthrough_successor != nil {
+        c.rec_createBasicBlocks(bb.fallthrough_successor, visited)
+    }
+
+    if bb.jump_successor != nil {
+        c.rec_createBasicBlocks(bb.jump_successor, visited)
+    }
+
+    // for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
+    //     c.createBasicBlocks(bb)
+    //
+    //     if bb.fallthrough_successor != nil {
+    //         c.createBasicBlocks(bb.fallthrough_successor)
+    //         c.addBasicBlock(bb.fallthrough_successor)
+    //     }
+    //
+    //     visited[bb.addr] = true
+    // }
 }
 
 func (c *Compiler) compileBb(bb *BasicBlock) (*llvm.BasicBlock, error) {
@@ -375,15 +397,58 @@ func (c *Compiler) compileBb(bb *BasicBlock) (*llvm.BasicBlock, error) {
     return block, nil
 }
 
-func (c *Compiler) fixUnterminatedBasicBlocks(cfg *BasicBlock) {
+func (c *Compiler) compileRecBb(bb *BasicBlock, visited map[int]bool) (*llvm.BasicBlock, error) {
+    if visited[bb.addr] {
+        return nil, nil
+    } else {
+        visited[bb.addr] = true
+    }
+
+    block, err := c.compileBb(bb)
+    if err != nil {
+        return nil, err
+    }
+
+    if bb.jump_successor != nil {
+        _, err := c.compileRecBb(bb.jump_successor, visited)
+        if err != nil {
+            return nil, err
+        }
+    }
+
+    if bb.fallthrough_successor != nil {
+        _, err := c.compileRecBb(bb.fallthrough_successor, visited)
+        if err != nil {
+            return nil, err
+        }
+    }
+
+    return block, nil
+}
+
+func (c *Compiler) compileAllBasicBlocks(bb *BasicBlock) error {
     visited := map[int]bool{}
 
-    for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
-        visited[bb.addr] = true
+    _, err := c.compileRecBb(bb, visited)
+    if err != nil {
+        return err
+    }
 
-        if !bb.willNeedTermination {
-            continue
-        }
+    return nil
+}
+
+func (c* Compiler) fixRecUnterminatedBasicBlocks(bb* BasicBlock, visited map[int]bool) {
+    if visited[bb.addr] {
+        return
+    } else {
+        visited[bb.addr] = true
+    }
+
+    if bb.addr == 0x2b7 {
+        fmt.Printf("XXX>>>> found 0x2b7 (%v) <<<<<<XXX\n", bb.willNeedTermination)
+    }
+
+    if bb.willNeedTermination {
         currBlock := c.addrToBlock[bb.addr]
         succBlock := c.addrToBlock[bb.jump_successor.addr]
 
@@ -391,6 +456,21 @@ func (c *Compiler) fixUnterminatedBasicBlocks(cfg *BasicBlock) {
         c.builder.CreateBr(*succBlock)
     }
 
+    if bb.jump_successor != nil {
+        c.fixRecUnterminatedBasicBlocks(bb.jump_successor, visited)
+    }
+
+    if bb.fallthrough_successor != nil {
+        c.fixRecUnterminatedBasicBlocks(bb.fallthrough_successor, visited)
+    }
+
+    return
+}
+
+func (c *Compiler) fixUnterminatedBasicBlocks(cfg *BasicBlock) {
+    visited := map[int]bool{}
+
+    c.fixRecUnterminatedBasicBlocks(cfg, visited)
 }
 
 func (c *Compiler) linkEntryToFirstBlock(cfg *BasicBlock) {
@@ -413,25 +493,32 @@ func (c *Compiler) compile(rom *Rom) error {
 
     c.createBasicBlocks(cfg)
 
-    visited := map[int]bool{}
-    for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
-        _, err := c.compileBb(bb)
-        if err != nil {
-            c.mod.Dump()
-            return err
-        }
-
-        visited[bb.addr] = true
+    err := c.compileAllBasicBlocks(cfg)
+    if err != nil {
+        c.mod.Dump()
+        return err
     }
+
+    // visited := map[int]bool{}
+    // for bb := cfg; bb != nil && !visited[bb.addr]; bb = bb.jump_successor {
+    //     _, err := c.compileBb(bb)
+    //     if err != nil {
+    //         c.mod.Dump()
+    //         return err
+    //     }
+    //
+    //     visited[bb.addr] = true
+    // }
 
     c.fixUnterminatedBasicBlocks(cfg)
     c.linkEntryToFirstBlock(cfg)
 
-    err := llvm.VerifyModule(c.mod, llvm.ReturnStatusAction)
+    c.mod.Dump()
+
+    err = llvm.VerifyModule(c.mod, llvm.ReturnStatusAction)
     if err != nil {
         return err
     }
-    c.mod.Dump()
 
     return nil
 }
