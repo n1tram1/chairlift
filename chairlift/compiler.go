@@ -245,6 +245,19 @@ func (c *Compiler) addRemainingZeros(ram *[]llvm.Value) {
     }
 }
 
+func (c *Compiler) CreateCondBranch(cond llvm.Value) error {
+    bb := c.bb
+    currentBlock := c.currentBlock
+
+    fallthrough_block := c.addrToBlock[bb.fallthrough_successor.addr]
+    jump_block := c.addrToBlock[bb.jump_successor.addr]
+
+    c.selectBlock(*currentBlock)
+    c.builder.CreateCondBr(cond, *jump_block, *fallthrough_block)
+
+    return nil
+}
+
 func (c *Compiler) createRamArray(bytes []byte) {
     ramValues := make([]llvm.Value, 0, RAM_SIZE)
 

@@ -36,38 +36,36 @@ func (se *SeVxByte) compile(c *Compiler) error {
     reg := c.builder.CreateLoad(c.VRegToLLVMValue(se.vx), "")
     val := c.ConstUint8(se.kk)
 
-    bb := c.bb
-    currentBlock := c.currentBlock
+    regEqualsVal := c.builder.CreateICmp(llvm.IntEQ, reg, val, "")
 
-    fallthrough_block, err := c.compileBb(bb.fallthrough_successor)
+    err := c.CreateCondBranch(regEqualsVal)
     if err != nil {
         return err
     }
-
-    jump_block := c.addrToBlock[bb.jump_successor.addr]
-
-    if bb.fallthrough_successor.willNeedTermination {
-        c.builder.CreateBr(*jump_block)
-        bb.fallthrough_successor.willNeedTermination = false
-    }
-
-    c.selectBlock(*currentBlock)
-
-    regEqualsVal := c.builder.CreateICmp(llvm.IntEQ, reg, val, "")
-
-    c.builder.CreateCondBr(regEqualsVal, *jump_block, *fallthrough_block)
-
-    c.selectBlock(*fallthrough_block)
 
     return nil
 }
 
 func (sne *SneVxByte) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction SneVxByte in codegen")
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(sne.vx), "")
+    val := c.ConstUint8(sne.kk)
+
+    vxNotEqualsVal := c.builder.CreateICmp(llvm.IntNE, vx_val, val, "")
+
+    c.CreateCondBranch(vxNotEqualsVal)
+
+    return nil
 }
 
 func (se *SeVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction SeVxVy in codegen")
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(se.vx), "")
+    vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(se.vy), "")
+
+    vxEqualsVy := c.builder.CreateICmp(llvm.IntEQ, vx_val, vy_val, "")
+
+    c.CreateCondBranch(vxEqualsVy)
+
+    return nil
 }
 
 func (ld *LdVxByte) compile(c *Compiler) error {
@@ -106,7 +104,13 @@ func (and *AndVxVy) compile(c *Compiler) error {
 }
 
 func (xor *XorVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction XorVxVy in codegen")
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(xor.vx), "")
+    vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(xor.vy), "")
+    result := c.builder.CreateXor(vx_val, vy_val, "")
+
+    c.builder.CreateStore(result, c.VRegToLLVMValue(xor.vx))
+
+    return nil
 }
 
 func (add *AddVxVy) compile(c *Compiler) error {
@@ -130,7 +134,14 @@ func (shl *ShlVxVy) compile(c *Compiler) error {
 }
 
 func (sne *SneVxVy) compile(c *Compiler) error {
-    return errors.New("unimplemented instruction SneVxVy in codegen")
+    vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(sne.vx), "")
+    vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(sne.vy), "")
+
+    vxNotEqualsVy := c.builder.CreateICmp(llvm.IntNE, vx_val, vy_val, "")
+
+    c.CreateCondBranch(vxNotEqualsVy)
+
+    return nil
 }
 
 func (ld *LdIAddr) compile(c *Compiler) error {
@@ -190,7 +201,7 @@ func (ld *LdStVx) compile(c *Compiler) error {
 func (add *AddIVx) compile(c *Compiler) error {
     vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(add.vx), "")
     i_val := c.builder.CreateLoad(c.reg_i, "")
-    res := c.builder.CreateAdd(vx_val, i_val, "")
+    res := c.builder.CreateAdd(llvm.ConstBitCast(vx_val, i_val.Type()), i_val, "")
 
     c.builder.CreateStore(res, c.reg_i)
 
