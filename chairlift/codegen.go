@@ -243,37 +243,43 @@ func (ld *LdBVx) compile(c *Compiler) error {
     return errors.New("unimplemented instruction LdBVx in codegen")
 }
 
-// TODO: GEP related stuff causes a segfault
 func (ld *LdIVx) compile(c *Compiler) error {
-    for i := VReg(0); i <= ld.vx; i++ {
+    reg_i_val := c.builder.CreateLoad(c.reg_i, "")
+
+    for i := uint16(0); i <= uint16(ld.vx); i++ {
+        addr := c.builder.CreateAdd(reg_i_val, c.ConstUint16(i), "")
         ptr := c.builder.CreateGEP(
             c.ram,
             []llvm.Value{
-                c.builder.CreateLoad(c.reg_i, ""),
-                c.ConstUint16(uint16(i)),
+                c.ConstUint16(0),
+                addr,
             },
             "",
         )
 
-        mem_val := c.builder.CreateLoad(ptr, fmt.Sprintf("load_%v", i))
-        c.builder.CreateStore(mem_val, c.VRegToLLVMValue(i))
+        reg_val := c.builder.CreateLoad(c.VRegToLLVMValue(VReg(i)), "")
+        c.builder.CreateStore(reg_val, ptr)
     }
 
     return nil
 }
 
 func (ld *LdVxI) compile(c *Compiler) error {
-    for i := VReg(0); i <= ld.vx; i++ {
+    reg_i_val := c.builder.CreateLoad(c.reg_i, "")
+
+    for i := uint16(0); i <= uint16(ld.vx); i++ {
+        addr := c.builder.CreateAdd(reg_i_val, c.ConstUint16(i), "")
         ptr := c.builder.CreateGEP(
             c.ram,
             []llvm.Value{
-                c.builder.CreateLoad(c.reg_i, ""),
-                c.ConstUint16(uint16(i)),
+                c.ConstUint16(0),
+                addr,
             },
             "",
         )
 
-        c.builder.CreateStore(c.builder.CreateLoad(c.VRegToLLVMValue(i), ""), ptr)
+        mem_val := c.builder.CreateLoad(ptr, fmt.Sprintf("load_%v", i))
+        c.builder.CreateStore(mem_val, c.VRegToLLVMValue(VReg(i)))
     }
 
     return nil
