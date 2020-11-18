@@ -118,11 +118,11 @@ func (add *AddVxVy) compile(c *Compiler) error {
     vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(add.vy), "")
     result := c.builder.CreateAdd(vx_val, vy_val, "")
 
-    smallerThanVx := c.builder.CreateICmp(llvm.IntULT, result, vx_val, "smallerThanVx")
-    smallerThanVy := c.builder.CreateICmp(llvm.IntULT, result, vy_val, "smallerThanVy")
-    tmp := c.builder.CreateAdd(c.CastU8(smallerThanVx), c.CastU8(smallerThanVy), "tmp")
-    check_overflow := c.CastU8(c.builder.CreateICmp(llvm.IntUGE, tmp, c.ConstUint8(1), "check_overflow"))
+    larger_vx_val := c.CastU16(vx_val)
+    larger_vy_val := c.CastU16(vy_val)
+    larger_result := c.builder.CreateAdd(larger_vx_val, larger_vy_val, "")
 
+    check_overflow := c.CastU8(c.builder.CreateICmp(llvm.IntNE, c.CastU16(result), larger_result, "check_overflow"))
     c.builder.CreateStore(check_overflow, c.reg_vF)
 
     c.builder.CreateStore(result, c.VRegToLLVMValue(add.vx))
@@ -131,16 +131,15 @@ func (add *AddVxVy) compile(c *Compiler) error {
 }
 
 func (sub *SubVxVy) compile(c *Compiler) error {
-    // TODO: I'm 100% sure `check_overflow` is wrong
     vx_val := c.builder.CreateLoad(c.VRegToLLVMValue(sub.vx), "")
     vy_val := c.builder.CreateLoad(c.VRegToLLVMValue(sub.vy), "")
     result := c.builder.CreateSub(vx_val, vy_val, "")
 
-    greaterThanVx := c.builder.CreateICmp(llvm.IntUGT, result, vx_val, "greaterThanVx")
-    greaterThanVy := c.builder.CreateICmp(llvm.IntUGT, result, vy_val, "greaterThanVy")
-    tmp := c.builder.CreateAdd(c.CastU8(greaterThanVx), c.CastU8(greaterThanVy), "tmp")
-    check_underflow := c.CastU8(c.builder.CreateICmp(llvm.IntUGE, tmp, c.ConstUint8(1), "check_overflow"))
+    larger_vx_val := c.CastI32(vx_val)
+    larger_vy_val := c.CastI32(vy_val)
+    larger_result := c.builder.CreateSub(larger_vx_val, larger_vy_val, "")
 
+    check_underflow := c.CastU8(c.builder.CreateICmp(llvm.IntNE, c.CastI32(result), larger_result, "check_underflow"))
     c.builder.CreateStore(check_underflow, c.reg_vF)
 
     c.builder.CreateStore(result, c.VRegToLLVMValue(sub.vx))
